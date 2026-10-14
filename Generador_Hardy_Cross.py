@@ -1,23 +1,9 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Generador de Excel Hardy Cross - versión final con diámetros automáticos.
-- Hazen-Williams con constante 1743.811 (D en pulgadas reales, Q en L/s, L en m).
-- Hardy Cross SIMULTÁNEO con cruce de deltas.
-- Selección de diámetro comercial a partir de v = 1.974·Q/D²  →  D = √(1.974·Q/v).
-- Validación de Hf por tubería (0.5 – 3.0 mca) en la primera iteración.
-- Interfaz moderna con tema oscuro.
-Requiere Python 3.9+, tkinter y openpyxl.
-"""
 import math
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
-# ---------------------------------------------------------------------------
-# Hidráulica: Hazen-Williams con constante 1743.811 (D en pulgadas, Q en L/s)
-# ---------------------------------------------------------------------------
 N_HW = 1.852
 K_HW = 1743.811
 
@@ -25,7 +11,6 @@ DIAMETROS_COMERCIALES = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12, 14
 
 
 def headloss(L, C, D_in, Q_lps):
-    """Hf en mca. L en m, D en pulgadas (real), Q en L/s."""
     if L <= 0 or C <= 0 or D_in <= 0:
         raise ValueError("L, C y D deben ser mayores que cero.")
     if abs(Q_lps) < 1e-14:
@@ -34,14 +19,12 @@ def headloss(L, C, D_in, Q_lps):
 
 
 def diametro_teorico(Q_lps, v_diseno):
-    """D teórico en pulgadas: D = sqrt(1.974·Q/v)."""
     if Q_lps <= 0 or v_diseno <= 0:
         return 0.0
     return math.sqrt(1.974 * Q_lps / v_diseno)
 
 
 def diametro_comercial(D_teorico, criterio="superior"):
-    """Selecciona el diámetro comercial según el criterio."""
     if D_teorico <= 0:
         return DIAMETROS_COMERCIALES[0]
     if criterio == "superior":
@@ -59,11 +42,6 @@ def diametro_comercial(D_teorico, criterio="superior"):
 
 
 def revisar_hf_primera_iteracion(result):
-    """
-    Revisa los Hf de la primera iteración. Devuelve (fuera, dentro) donde:
-    - fuera: lista de (pid, Hf, sugerencia) con Hf fuera de 0.5–3.0
-    - dentro: lista de (pid, Hf) con Hf dentro del rango
-    """
     if not result["history"]:
         return [], []
     it1 = result["history"][0]
@@ -87,15 +65,6 @@ def revisar_hf_primera_iteracion(result):
 
 
 def solve_hardy_cross(q_in, pipes, loops, max_iter=100, tol_factor=0.005):
-    """
-    Hardy Cross SIMULTÁNEO con cruce de deltas.
-    - Δ propio = Δ_circuito = -ΣHf/(1.85·ΣHf/Q)
-    - Δ del otro = -Σ Δ_vecinos
-    - Δ total aplicado = Δ propio + Δ del otro (igual en todas las filas de una
-      misma tubería compartida).
-    - La corrección se aplica UNA SOLA VEZ por tubería física, con el dir del
-      primer circuito donde aparece; el mismo Q_after se replica en todas las filas.
-    """
     q = {pid: float(p["Q"]) for pid, p in pipes.items()}
     threshold = tol_factor * abs(q_in)
     history = []
@@ -103,7 +72,6 @@ def solve_hardy_cross(q_in, pipes, loops, max_iter=100, tol_factor=0.005):
     for iteration in range(1, max_iter + 1):
         q_start = q.copy()
 
-        # PASO 1: cada circuito calcula su Δ con los caudales del inicio
         circuit_results = []
         pipe_loops = {}
         for li, loop in enumerate(loops):
@@ -141,7 +109,6 @@ def solve_hardy_cross(q_in, pipes, loops, max_iter=100, tol_factor=0.005):
                     "dir": m["dir"], "delta": delta,
                 })
 
-        # PASO 2: Δ propio (tal cual), Δ del otro y Δ total por fila
         for li, lp in enumerate(circuit_results):
             for r in lp["rows"]:
                 pid = r["pipe"]
@@ -159,7 +126,6 @@ def solve_hardy_cross(q_in, pipes, loops, max_iter=100, tol_factor=0.005):
                 r["delta_total"] = delta_total
                 r["compartida"] = bool(others)
 
-        # PASO 3: aplicar corrección UNA SOLA VEZ por tubería física
         applied = set()
         for li, lp in enumerate(circuit_results):
             for r in lp["rows"]:
@@ -202,10 +168,7 @@ def solve_hardy_cross(q_in, pipes, loops, max_iter=100, tol_factor=0.005):
         "history": history, "pipes": pipe_results,
     }
 
-
-# ---------------------------------------------------------------------------
 # Excel
-# ---------------------------------------------------------------------------
 def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametro="manual"):
     wb = Workbook()
     ws = wb.active
@@ -237,7 +200,6 @@ def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametr
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         sheet.row_dimensions[row].height = 30
 
-    # ---------------- ENTRADA ----------------
     title(ws, "DISEÑO HIDRÁULICO – HARDY CROSS", 10)
     meta = [
         ("Caudal de entrada (L/s)", q_in),
@@ -280,7 +242,6 @@ def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametr
                                              fgColor=green if pr["h_range_ok"] else red)
     ws.auto_filter.ref = f"A{start}:J{start + len(pipes)}"
 
-    # ---------------- HARDY CROSS ----------------
     title(hc, "PROCEDIMIENTO DE HARDY CROSS – ITERACIONES", 14)
     hc["A3"] = "Caudal de entrada (L/s)"; hc["B3"] = q_in
     hc["A4"] = "Tolerancia Δ (L/s)"; hc["B4"] = result["threshold"]
@@ -362,7 +323,6 @@ def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametr
         hc.cell(row, 1).fill = PatternFill("solid", fgColor=green if ok else yellow)
         row += 2
 
-    # ---------------- RESUMEN ----------------
     title(sm, "RESUMEN DEL DISEÑO", 8)
     summary = [
         ("Caudal de entrada (L/s)", q_in),
@@ -390,7 +350,6 @@ def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametr
             sm.cell(r, c).alignment = Alignment(horizontal="center")
         sm.cell(r, 5).fill = PatternFill("solid", fgColor=green if vals[4] == "OK" else red)
 
-    # Anchos y formato
     widths = {"A": 18, "B": 18, "C": 12, "D": 13, "E": 10, "F": 14, "G": 16,
               "H": 15, "I": 15, "J": 15, "K": 20, "L": 22, "M": 20, "N": 16}
     for sheet in wb.worksheets:
@@ -412,10 +371,8 @@ def make_excel(filename, q_in, pipes, loops, result, v_diseno=None, modo_diametr
     hc.print_title_rows = "1:9"
     wb.save(filename)
 
+###FRONTEND
 
-# ---------------------------------------------------------------------------
-# Interfaz gráfica
-# ---------------------------------------------------------------------------
 COLORS = {
     "bg": "#1e1e2e",
     "panel": "#2a2a3e",
@@ -479,7 +436,6 @@ class HardyCrossApp:
         for w in self.root.winfo_children():
             w.destroy()
 
-    # ---------------- Pantalla inicial ----------------
     def build_start(self):
         self.clear()
         outer = ttk.Frame(self.root, padding=30)
@@ -527,7 +483,6 @@ class HardyCrossApp:
                        "Q en L/s, D en pulg, L en m",
                   style="Dim.TLabel").pack(side="bottom", pady=10)
 
-    # ---------------- Pantalla de circuitos ----------------
     def build_circuits(self):
         try:
             q = float(self.q_var.get().replace(",", "."))
@@ -555,7 +510,6 @@ class HardyCrossApp:
                        "El sentido + / − indica su dirección respecto al recorrido del circuito.",
                   style="Sub.TLabel").pack(anchor="w", pady=(4, 0))
 
-        # -------- Panel de modo de diámetro --------
         dm_card = ttk.Frame(outer, style="Panel.TFrame", padding=12)
         dm_card.pack(fill="x", pady=(6, 8))
 
@@ -608,7 +562,6 @@ class HardyCrossApp:
 
         self._on_modo_change()
 
-        # -------- Barra de herramientas --------
         tools = ttk.Frame(outer)
         tools.pack(fill="x", pady=(4, 8))
         ttk.Button(tools, text="Rellenar ejemplo (2 circuitos del Excel)",
@@ -673,7 +626,6 @@ class HardyCrossApp:
             pass
 
     def create_rows(self, idx, force=False):
-        """Reconstruye las filas del circuito idx conservando los valores existentes."""
         data = self.circuit_frames[idx]
         container = data["container"]
 
@@ -719,7 +671,6 @@ class HardyCrossApp:
             data["rows"].append(vars_)
 
     def calcular_diametros(self):
-        """Recorre todas las filas, calcula D comercial con la velocidad de diseño."""
         try:
             v = float(self.v_var.get().replace(",", "."))
             if v <= 0:
@@ -749,7 +700,6 @@ class HardyCrossApp:
             f"y criterio '{self.crit_diam}'.")
 
     def fill_example(self):
-        """Rellena los circuitos con datos del Excel original."""
         if len(self.circuit_frames) < 2:
             messagebox.showinfo(
                 "Ejemplo",
@@ -777,7 +727,6 @@ class HardyCrossApp:
 
     def generate(self):
         try:
-            # Actualizar velocidad y criterio (por si cambiaron)
             if self.modo_var.get() == "auto":
                 try:
                     v = float(self.v_var.get().replace(",", "."))
@@ -835,7 +784,6 @@ class HardyCrossApp:
             result = solve_hardy_cross(self.q_in, pipes, loops,
                                        tol_factor=self.tol_factor)
 
-            # Aviso de Hf fuera de rango en la primera iteración
             fuera, dentro = revisar_hf_primera_iteracion(result)
             if fuera:
                 lineas = []
